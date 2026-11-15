@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Sorteo {
+  id                 Int            @id
+  titulo             String         @default("Sorteo Fiel Blockchain")
+  basesTexto         String         @default("Bases y Condiciones Verificables")
+  basesHash          String?
+  estado             String         @default("ABIERTO") // ABIERTO, SELLADO, SORTEANDO, FINALIZADO
+  merkleRoot         String?
+  txCrearHash        String?
+  txSellarHash       String?
+  txVrfHash          String?
+  totalParticipantes Int            @default(0)
+  indiceGanador      Int?
+  numeroAleatorio    String?
+  activo             Boolean        @default(true)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  participantes      Participante[]
+}
+
+model Participante {
+  id            String   @id @default(cuid())
+  sorteoId      Int
+  sorteo        Sorteo   @relation(fields: [sorteoId], references: [id], onDelete: Cascade)
+  indice        Int
+  nombre        String
+  identificador String
+  hojaHash      String
+  createdAt     DateTime @default(now())
+
+  @@unique([sorteoId, identificador])
+  @@unique([sorteoId, indice])
+}

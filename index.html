@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>SorteoFiel - Sorteos Verificables en Blockchain</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/merkletreejs@latest/merkletree.js"></script>
+</head>
+
+<body class="bg-slate-900 text-slate-100 min-h-screen p-6 font-sans">
+    <div class="max-w-4xl mx-auto space-y-6">
+
+        <!-- Header -->
+        <header class="flex justify-between items-center bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <div>
+                <h1 class="text-2xl font-bold text-indigo-400">SorteoFiel</h1>
+                <p class="text-xs text-slate-400">Polygon Amoy Testnet · Chainlink VRF v2.5 · Merkle Proof</p>
+            </div>
+            <div class="text-right">
+                <button id="btnConnect" onclick="conectarWallet()"
+                    class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-medium">
+                    Conectar MetaMask (Admin)
+                </button>
+                <p id="walletStatus" class="text-xs text-slate-400 mt-1">Modo Participante (Sin Wallet)</p>
+            </div>
+        </header>
+
+        <!-- Selector de Sorteo Activo -->
+        <div
+            class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-wrap gap-4 items-center justify-between">
+            <div class="flex items-center gap-3">
+                <label class="text-sm font-medium">ID Sorteo Activo:</label>
+                <input type="number" id="inputIdSorteo" value="1" min="1"
+                    class="bg-slate-900 border border-slate-600 rounded px-3 py-1 w-20 text-center">
+                <button onclick="cargarEstadoSorteo()"
+                    class="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-sm">Actualizar Estado</button>
+            </div>
+            <div id="badgeEstado" class="px-3 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-300">
+                Estado: Sin consultar
+            </div>
+        </div>
+
+        <!-- Grid Principal -->
+        <div class="grid md:grid-cols-2 gap-6">
+
+            <!-- 1. PANEL PARTICIPANTE (WEB2) -->
+            <section class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4">
+                <h2 class="text-lg font-semibold text-emerald-400">1. Inscripción (Web2 - Sin Billetera)</h2>
+                <p class="text-xs text-slate-400">Los participantes se registran sin costo de gas y reciben una huella
+                    de su ticket.</p>
+
+                <div class="space-y-3">
+                    <input type="text" id="partNombre" placeholder="Nombre completo"
+                        class="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm">
+                    <input type="text" id="partDni" placeholder="DNI o Email (Identificador único)"
+                        class="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm">
+                    <button onclick="inscribirParticipante()"
+                        class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded-lg font-medium text-sm">
+                        Inscribirme y Generar Comprobante
+                    </button>
+                </div>
+
+                <div class="pt-2 border-t border-slate-700">
+                    <p class="text-xs font-medium text-slate-300 mb-2">Padrón Web2 actual (<span
+                            id="countInscriptos">0</span> inscriptos):</p>
+                    <ul id="listaInscriptos"
+                        class="text-xs text-slate-400 space-y-1 max-h-32 overflow-y-auto bg-slate-900 p-2 rounded"></ul>
+                </div>
+            </section>
+
+            <!-- 2. PANEL ORGANIZADOR (WEB3) -->
+            <section class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4">
+                <h2 class="text-lg font-semibold text-indigo-400">2. Panel Organizador (Blockchain)</h2>
+                <p class="text-xs text-slate-400">Requiere MetaMask conectada con rol de Organizador.</p>
+
+                <div class="space-y-2">
+                    <input type="text" id="basesTexto" placeholder="Texto o URL de Bases y Condiciones"
+                        value="Bases Sorteo UTN FRC 2026"
+                        class="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm">
+                    <button onclick="crearSorteoOnChain()"
+                        class="w-full bg-indigo-600 hover:bg-indigo-500 py-2 rounded text-sm font-medium">
+                        Paso A: Crear Sorteo en Blockchain
+                    </button>
+                </div>
+
+                <div class="pt-2 border-t border-slate-700 space-y-2">
+                    <button onclick="sellarListaOnChain()"
+                        class="w-full bg-amber-600 hover:bg-amber-500 py-2 rounded text-sm font-medium">
+                        Paso B: Cerrar Inscripción y Sellar Raíz de Merkle
+                    </button>
+                    <button onclick="ejecutarSorteoOnChain()"
+                        class="w-full bg-purple-600 hover:bg-purple-500 py-2 rounded text-sm font-medium">
+                        Paso C: Solicitar Aleatoriedad (Chainlink VRF)
+                    </button>
+                </div>
+
+                <div id="txLog" class="text-xs bg-slate-900 p-2 rounded text-slate-300 break-all min-h-[48px]">
+                    Esperando acciones...
+                </div>
+            </section>
+        </div>
+
+        <!-- 3. PANEL AUDITORÍA Y VERIFICACIÓN -->
+        <section class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4">
+            <h2 class="text-lg font-semibold text-cyan-400">3. Auditoría Pública y Verificación de Comprobante</h2>
+
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="space-y-2">
+                    <label class="text-xs text-slate-300">Pega aquí tu JSON de Comprobante descargado:</label>
+                    <textarea id="jsonComprobante" rows="4" placeholder='{"idSorteo": 1, "indice": 0, ...}'
+                        class="w-full bg-slate-900 border border-slate-600 rounded p-2 text-xs font-mono"></textarea>
+                    <button onclick="auditarComprobante()"
+                        class="bg-cyan-600 hover:bg-cyan-500 px-4 py-2 rounded text-sm font-medium">
+                        Verificar Inclusión y Ganador en Contrato
+                    </button>
+                </div>
+
+                <div id="resultadoAuditoria"
+                    class="bg-slate-900 p-4 rounded-lg border border-slate-700 text-sm space-y-2">
+                    <p class="text-slate-400 text-xs">Aquí se mostrará la verificación criptográfica contra la Raíz de
+                        Merkle sellada en Polygon Amoy y el resultado de Chainlink VRF.</p>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <script>
+        // =========================================================================
+        // 1. CONFIGURACIÓN DEL CONTRATO (REEMPLAZA CON TU DIRECCIÓN DE REMIX)
+        // =========================================================================
+        const CONTRACT_ADDRESS = "0x0DF3C49109d960cfFde411A6c34058c86A675c29";
+        const RPC_PUBLICO = "https://polygon-amoy-bor-rpc.publicnode.com";
+        const GAS_OVERRIDES = {
+            maxPriorityFeePerGas: ethers.parseUnits("30", "gwei"),
+            maxFeePerGas: ethers.parseUnits("40", "gwei")
+        };
+
+        const ABI = [
+            "function crearSorteo(bytes32 _hashBases, uint256 _fechaSorteo) external returns (uint256)",
+            "function sellarLista(uint256 _idSorteo, bytes32 _huellaLista, uint256 _totalParticipantes, string calldata _uriLista) external",
+            "function solicitarAleatoriedad(uint256 _idSorteo) external returns (uint256)",
+            "function verificarParticipacion(uint256 _idSorteo, bytes32[] calldata _merkleProof, bytes32 _hojaParticipante) external view returns (bool)",
+            "function sorteos(uint256) external view returns (uint256 idSorteo, address organizador, bytes32 hashBases, uint256 fechaSorteo, uint8 estado)",
+            "function registrosSellados(uint256) external view returns (bytes32 huellaLista, uint256 totalParticipantes, string uriLista)",
+            "function resultados(uint256) external view returns (uint256 requestId, uint256 numeroAleatorio, uint256 indiceGanador)",
+            "function contadorSorteos() external view returns (uint256)"
+        ];
+
+        const ESTADOS = ["Abierto", "Sellado", "Sorteando", "Finalizado", "Cancelado"];
+        let provider, signer, contractWrite;
+        const readProvider = new ethers.JsonRpcProvider(RPC_PUBLICO);
+        const contractRead = new ethers.Contract(CONTRACT_ADDRESS, ABI, readProvider);
+
+        async function conectarWallet() {
+            if (!window.ethereum) return alert("Instala MetaMask para usar el panel de Organizador.");
+            provider = new ethers.BrowserProvider(window.ethereum);
+            signer = await provider.getSigner();
+            contractWrite = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+            const addr = await signer.getAddress();
+            document.getElementById("walletStatus").innerText = `Admin conectado: ${addr.slice(0, 6)}...${addr.slice(-4)}`;
+            document.getElementById("btnConnect").innerText = "Wallet Conectada";
+        }
+
+        function getIdSorteo() {
+            return parseInt(document.getElementById("inputIdSorteo").value);
+        }
+
+        function obtenerParticipantes(idSorteo) {
+            return JSON.parse(localStorage.getItem(`sorteo_${idSorteo}`) || "[]");
+        }
+
+        function generarHoja(idSorteo, indice, nombre, dni) {
+            return ethers.solidityPackedKeccak256(
+                ["uint256", "uint256", "string", "string"],
+                [idSorteo, indice, nombre.trim(), dni.trim()]
+            );
+        }
+
+        function construirArbolMerkle(participantes, idSorteo) {
+            const hojas = participantes.map((p, idx) => generarHoja(idSorteo, idx, p.nombre, p.dni));
+
+            // Construcción pura en ethers.js (compatible con OpenZeppelin MerkleProof, sin Buffer)
+            let niveles = [hojas];
+            while (niveles[niveles.length - 1].length > 1) {
+                const nivelActual = niveles[niveles.length - 1];
+                const siguienteNivel = [];
+                for (let i = 0; i < nivelActual.length; i += 2) {
+                    if (i + 1 === nivelActual.length) {
+                        siguienteNivel.push(nivelActual[i]);
+                    } else {
+                        const [a, b] = [nivelActual[i], nivelActual[i + 1]].sort();
+                        siguienteNivel.push(ethers.solidityPackedKeccak256(["bytes32", "bytes32"], [a, b]));
+                    }
+                }
+                niveles.push(siguienteNivel);
+            }
+
+            return {
+                hojas,
+                getHexRoot: () => niveles[niveles.length - 1][0],
+                getHexProof: (hoja) => {
+                    let idx = hojas.indexOf(hoja);
+                    if (idx === -1) return [];
+                    const proof = [];
+                    for (let n = 0; n < niveles.length - 1; n++) {
+                        const nivel = niveles[n];
+                        const esDerecho = idx % 2 === 1;
+                        const parIdx = esDerecho ? idx - 1 : idx + 1;
+                        if (parIdx < nivel.length) {
+                            proof.push(nivel[parIdx]);
+                        }
+                        idx = Math.floor(idx / 2);
+                    }
+                    return proof;
+                }
+            };
+        }
+
+
+
+        function inscribirParticipante() {
+            const idSorteo = getIdSorteo();
+            const nombre = document.getElementById("partNombre").value;
+            const dni = document.getElementById("partDni").value;
+            if (!nombre || !dni) return alert("Completa nombre y DNI/Email.");
+
+            const lista = obtenerParticipantes(idSorteo);
+            const indice = lista.length;
+            const hoja = generarHoja(idSorteo, indice, nombre, dni);
+
+            const registro = { indice, nombre, dni, hoja, fecha: new Date().toISOString() };
+            lista.push(registro);
+            localStorage.setItem(`sorteo_${idSorteo}`, JSON.stringify(lista));
+
+            const comprobante = { idSorteo, indice, nombre, dni, hashTicket: hoja };
+            const blob = new Blob([JSON.stringify(comprobante, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `comprobante_sorteo_${idSorteo}_ticket_${indice}.json`;
+            a.click();
+
+            document.getElementById("partNombre").value = "";
+            document.getElementById("partDni").value = "";
+            renderizarLista();
+        }
+
+        function renderizarLista() {
+            const idSorteo = getIdSorteo();
+            const lista = obtenerParticipantes(idSorteo);
+            document.getElementById("countInscriptos").innerText = lista.length;
+            document.getElementById("listaInscriptos").innerHTML = lista.map(p =>
+                `<li><strong>#${p.indice}</strong> - ${p.nombre} (${p.dni}) · <span class="text-slate-500">${p.hoja.slice(0, 12)}...</span></li>`
+            ).join("");
+        }
+
+        function logTx(msg, hash = null) {
+            const link = hash ? ` <a href="https://amoy.polygonscan.com/tx/${hash}" target="_blank" class="text-indigo-400 underline">Ver en Polygonscan</a>` : "";
+            document.getElementById("txLog").innerHTML = msg + link;
+        }
+
+        async function crearSorteoOnChain() {
+            if (!contractWrite) return alert("Conecta MetaMask primero.");
+            const bases = document.getElementById("basesTexto").value;
+            const hashBases = ethers.keccak256(ethers.toUtf8Bytes(bases));
+            const fechaSorteo = Math.floor(Date.now() / 1000);
+
+            logTx("Enviando transacción crearSorteo...");
+            const tx = await contractWrite.crearSorteo(hashBases, fechaSorteo, GAS_OVERRIDES);
+            logTx("Confirmando en Polygon Amoy...", tx.hash);
+            await tx.wait();
+            const total = await contractRead.contadorSorteos();
+            document.getElementById("inputIdSorteo").value = total.toString();
+            logTx(`Sorteo #${total} creado con éxito.`, tx.hash);
+            cargarEstadoSorteo();
+        }
+
+        async function sellarListaOnChain() {
+            if (!contractWrite) return alert("Conecta MetaMask primero.");
+            const idSorteo = getIdSorteo();
+            const lista = obtenerParticipantes(idSorteo);
+            if (lista.length === 0) return alert("No hay participantes inscriptos en este sorteo.");
+
+            const tree = construirArbolMerkle(lista, idSorteo);
+            const raizMerkle = tree.getHexRoot();
+
+            logTx(`Sellando lista de ${lista.length} participantes (Raíz: ${raizMerkle.slice(0, 14)}...)...`);
+            const tx = await contractWrite.sellarLista(idSorteo, raizMerkle, lista.length, "ipfs://padron-anonimizado-sorteofiel", GAS_OVERRIDES);
+            logTx("Esperando confirmación de sellado...", tx.hash);
+            await tx.wait();
+            logTx("Lista sellada e inmutable en Blockchain.", tx.hash);
+            cargarEstadoSorteo();
+        }
+
+        async function ejecutarSorteoOnChain() {
+            if (!contractWrite) return alert("Conecta MetaMask primero.");
+            const idSorteo = getIdSorteo();
+            logTx("Solicitando número aleatorio a Chainlink VRF...");
+            const tx = await contractWrite.solicitarAleatoriedad(idSorteo, GAS_OVERRIDES);
+            logTx("Pedido enviado. Esperando respuesta del oráculo (tarda ~15-30 seg)...", tx.hash);
+            await tx.wait();
+            cargarEstadoSorteo();
+        }
+
+        async function cargarEstadoSorteo() {
+            renderizarLista();
+            const idSorteo = getIdSorteo();
+            try {
+                const s = await contractRead.sorteos(idSorteo);
+                if (s.idSorteo === 0n) {
+                    document.getElementById("badgeEstado").innerText = "Estado: Sorteo no creado aún";
+                    return;
+                }
+                const estadoNombre = ESTADOS[Number(s.estado)];
+                document.getElementById("badgeEstado").innerText = `Estado: ${estadoNombre}`;
+
+                if (estadoNombre === "Finalizado") {
+                    const res = await contractRead.resultados(idSorteo);
+                    const lista = obtenerParticipantes(idSorteo);
+                    const ganadorObj = lista[Number(res.indiceGanador)];
+                    document.getElementById("resultadoAuditoria").innerHTML = `
+            <div class="p-3 bg-emerald-950/60 border border-emerald-600 rounded">
+              <p class="text-emerald-400 font-bold">¡Sorteo #${idSorteo} Finalizado!</p>
+              <p class="text-xs mt-1"><strong>Índice Ganador:</strong> #${res.indiceGanador.toString()}</p>
+              <p class="text-xs"><strong>Participante:</strong> ${ganadorObj ? ganadorObj.nombre + " (" + ganadorObj.dni + ")" : "Ver lista oficial"}</p>
+              <p class="text-xs text-slate-400 break-all mt-1"><strong>Número VRF:</strong> ${res.numeroAleatorio.toString()}</p>
+            </div>`;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function auditarComprobante() {
+            const raw = document.getElementById("jsonComprobante").value;
+            if (!raw) return alert("Pega el contenido de tu archivo JSON comprobante.");
+
+            try {
+                const comp = JSON.parse(raw);
+                const lista = obtenerParticipantes(comp.idSorteo);
+                const tree = construirArbolMerkle(lista, comp.idSorteo);
+
+                const hojaRecalculada = generarHoja(comp.idSorteo, comp.indice, comp.nombre, comp.dni);
+                const proof = tree.getHexProof(hojaRecalculada);
+
+                const esValido = await contractRead.verificarParticipacion(comp.idSorteo, proof, hojaRecalculada);
+                const s = await contractRead.sorteos(comp.idSorteo);
+                const res = await contractRead.resultados(comp.idSorteo);
+
+                let html = `<p class="font-bold ${esValido ? 'text-emerald-400' : 'text-red-400'}">
+          ${esValido ? '✅ COMPROBANTE AUTÉNTICO: Incluido en la lista sellada on-chain.' : '❌ COMPROBANTE INVÁLIDO: Los datos fueron alterados o no estaban en el padrón sellado.'}
+        </p>`;
+
+                if (esValido && Number(s.estado) === 3) {
+                    const gano = Number(res.indiceGanador) === Number(comp.indice);
+                    html += `<p class="mt-2 font-semibold ${gano ? 'text-amber-400' : 'text-slate-300'}">
+            ${gano ? '🏆 ¡FELICITACIONES! Este ticket corresponde al GANADOR del sorteo.' : `Este ticket participó legalmente, pero el índice ganador fue el #${res.indiceGanador}.`}
+          </p>`;
+                } else if (esValido) {
+                    html += `<p class="text-xs text-slate-400 mt-1">El sorteo aún se encuentra en estado: <strong>${ESTADOS[Number(s.estado)]}</strong>.</p>`;
+                }
+
+                document.getElementById("resultadoAuditoria").innerHTML = html;
+            } catch (err) {
+                alert("Error verificando comprobante: asegúrate de que el sorteo esté sellado y el JSON sea válido.");
+                console.error(err);
+            }
+        }
+
+        renderizarLista();
+    </script>
+</body>
+
+</html>
