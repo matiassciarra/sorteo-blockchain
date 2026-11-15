@@ -50,16 +50,28 @@ Abre en tu navegador:
 
 ---
 
-## 🗄️ Base de Datos: PostgreSQL (Supabase / Neon)
+## 🗄️ Base de Datos: PostgreSQL (Neon / Supabase)
 
-La aplicación almacena los sorteos y participantes en tiempo real. 
-Viene con soporte directo para almacenamiento local automático (`data/store.json`) y conexión con PostgreSQL:
+La app elige sola dónde guardar sorteos e inscriptos:
 
-1. Crea tu base de datos gratuita en [Supabase](https://supabase.com) o [Neon](https://neon.tech).
-2. Pega tu cadena de conexión en `.env.local`:
+- **Sin `DATABASE_URL`** (modo local): usa un archivo JSON temporal. Sirve para probar en una sola compu.
+- **Con `DATABASE_URL`**: usa PostgreSQL. Es lo que hace falta para publicarla, porque en Vercel el archivo temporal se pierde. **Las tablas se crean solas** la primera vez; no hay que correr ningún comando.
+
+1. Crear una base gratis en [Neon](https://neon.tech) (o Supabase) y copiar el *connection string*.
+2. En local, pegarlo en `.env.local`:
    ```env
-   DATABASE_URL="postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres?sslmode=require"
+   DATABASE_URL="postgresql://usuario:password@host/neondb?sslmode=require"
    ```
+
+## 🌐 Publicar en Vercel
+
+1. En [vercel.com](https://vercel.com) → **Add New → Project** → importar este repositorio (Vercel detecta Next.js solo).
+2. En **Environment Variables** cargar:
+   - `DATABASE_URL` → el connection string de Neon
+   - `NEXT_PUBLIC_CONTRACT_ADDRESS` → `0x0DF3C49109d960cfFde411A6c34058c86A675c29`
+   - `NEXT_PUBLIC_AMOY_RPC` → `https://polygon-amoy-bor-rpc.publicnode.com`
+   - `NEXT_PUBLIC_EXPLORER_URL` → `https://amoy.polygonscan.com`
+3. **Deploy**. La URL pública (`https://<proyecto>.vercel.app`) es la que va en el QR del proyector.
 
 ---
 
