@@ -42,6 +42,7 @@ import {
   AMOY_CHAIN_ID_DEC,
   GAS_OVERRIDES,
   ESTADOS_SORTEO,
+  mensajeErrorContrato,
 } from '@/lib/contract';
 import { construirArbolMerkle } from '@/lib/merkle';
 
@@ -246,7 +247,7 @@ export default function AdminPage() {
       });
       cargarEstado();
     } catch (err: any) {
-      notifications.show({ title: 'Error al crear sorteo', message: err.message, color: 'red' });
+      notifications.show({ title: 'Error al crear sorteo', message: mensajeErrorContrato(err), color: 'red', autoClose: 15000 });
     } finally {
       setLoadingAction(null);
     }
@@ -333,7 +334,7 @@ export default function AdminPage() {
           console.error(e);
         }
       }
-      notifications.show({ title: 'Error al sellar lista', message: err.message, color: 'red' });
+      notifications.show({ title: 'Error al sellar lista', message: mensajeErrorContrato(err), color: 'red', autoClose: 15000 });
     } finally {
       setLoadingAction(null);
     }
@@ -396,7 +397,7 @@ export default function AdminPage() {
         }
       }, 3000);
     } catch (err: any) {
-      notifications.show({ title: 'Error solicitando VRF', message: err.message, color: 'red' });
+      notifications.show({ title: 'Error solicitando VRF', message: mensajeErrorContrato(err), color: 'red', autoClose: 15000 });
     } finally {
       setLoadingAction(null);
     }
