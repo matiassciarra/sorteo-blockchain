@@ -57,7 +57,7 @@ export default function ProyectorUltimoSorteoPage() {
   const [participantes, setParticipantes] = useState<Participante[]>([]);
   const [currentUrl, setCurrentUrl] = useState('');
   const [idFijado, setIdFijado] = useState<number | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   const idFijadoRef = useRef<number | null>(null);
   idFijadoRef.current = idFijado;

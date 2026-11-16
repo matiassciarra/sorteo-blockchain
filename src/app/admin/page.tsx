@@ -166,6 +166,28 @@ export default function AdminPage() {
         setParticipantes(parts);
       }
 
+      // La blockchain manda: si la base quedó atrasada (página recargada, Chainlink
+      // lento, pestaña cerrada), se la pone al día.
+      const ESTADO_DB: Record<string, string> = {
+        Sellado: 'SELLADO',
+        Sorteando: 'SORTEANDO',
+        Finalizado: 'FINALIZADO',
+      };
+      const estadoDbEsperado = ESTADO_DB[estadoOnChain];
+      if (apiData && estadoDbEsperado && apiData.estado !== estadoDbEsperado) {
+        const cambios: any = { estado: estadoDbEsperado };
+        if (resultadoVRF) {
+          cambios.indiceGanador = resultadoVRF.indiceGanador;
+          cambios.numeroAleatorio = resultadoVRF.numeroAleatorio;
+        }
+        const resSync = await fetch(`/api/sorteos/${idSorteo}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cambios),
+        });
+        if (resSync.ok) apiData = (await resSync.json()).sorteo;
+      }
+
       setSorteoInfo({
         estadoOnChain,
         resultadoVRF,
@@ -243,18 +265,34 @@ export default function AdminPage() {
     }
 
     setLoadingAction('sellar');
+    let inscripcionesCerradas = false;
     try {
       const contractWrite = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
+      // 1) Cerrar inscripciones ANTES de armar el árbol: a partir de acá la API
+      //    rechaza nuevas inscripciones, así nadie queda afuera del padrón sellado.
+      await fetch(`/api/sorteos/${idSorteo}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: 'SELLADO' }),
+      });
+      inscripcionesCerradas = true;
+
+      // 2) Leer la lista definitiva (incluye a quienes se anotaron hasta este momento)
+      const resLista = await fetch(`/api/sorteos/${idSorteo}/participantes`, { cache: 'no-store' });
+      const listaFinal: any[] = (await resLista.json()).participantes || [];
+      setParticipantes(listaFinal);
+      if (listaFinal.length === 0) throw new Error('El padrón está vacío.');
+
       // Construcción del Merkle Tree exacto
-      const tree = construirArbolMerkle(participantes, idSorteo);
+      const tree = construirArbolMerkle(listaFinal, idSorteo);
       const raizMerkle = tree.getHexRoot();
 
-      agregarLog(`Sellando padrón de ${participantes.length} personas (Raíz Merkle: ${raizMerkle.slice(0, 14)}...)...`);
+      agregarLog(`Sellando padrón de ${listaFinal.length} personas (Raíz Merkle: ${raizMerkle.slice(0, 14)}...)...`);
       const tx = await contractWrite.sellarLista(
         idSorteo,
         raizMerkle,
-        participantes.length,
+        listaFinal.length,
         `ipfs://sorteofiel-padron-sorteo-${idSorteo}`,
         GAS_OVERRIDES
       );
@@ -280,6 +318,21 @@ export default function AdminPage() {
       });
       cargarEstado();
     } catch (err: any) {
+      // Si la transacción no se hizo, se reabren las inscripciones
+      if (inscripcionesCerradas) {
+        try {
+          const s = await contractRead.sorteos(idSorteo);
+          if (ESTADOS_SORTEO[Number(s.estado)] === 'Abierto') {
+            await fetch(`/api/sorteos/${idSorteo}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ estado: 'ABIERTO' }),
+            });
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
       notifications.show({ title: 'Error al sellar lista', message: err.message, color: 'red' });
     } finally {
       setLoadingAction(null);
@@ -335,7 +388,7 @@ export default function AdminPage() {
             });
             agregarLog(`🎉 ¡Chainlink VRF respondió! Ganador oficial: Ticket #${res.indiceGanador}`);
             cargarEstado();
-          } else if (intentos > 25) {
+          } else if (intentos > 60) {
             clearInterval(poll);
           }
         } catch (e) {
