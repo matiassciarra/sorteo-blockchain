@@ -4,6 +4,7 @@ export interface ParticipanteMerkle {
   indice: number;
   nombre: string;
   identificador: string;
+  hojaHash?: string;
 }
 
 export function generarHoja(
@@ -30,9 +31,11 @@ export function construirArbolMerkle(
     };
   }
 
-  const hojas = participantes.map((p) =>
-    generarHoja(idSorteo, p.indice, p.nombre, p.identificador)
-  );
+  // Se ordena por índice (la posición en el padrón define el ganador) y se usa la
+  // hoja ya calculada por el servidor; la lista pública no trae el DNI completo.
+  const hojas = [...participantes]
+    .sort((a, b) => a.indice - b.indice)
+    .map((p) => p.hojaHash || generarHoja(idSorteo, p.indice, p.nombre, p.identificador));
 
   const niveles: string[][] = [hojas];
 

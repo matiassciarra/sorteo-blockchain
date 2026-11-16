@@ -19,7 +19,7 @@ export interface SorteoRecord {
   titulo: string;
   basesTexto: string;
   basesHash?: string | null;
-  estado: 'ABIERTO' | 'SELLADO' | 'SORTEANDO' | 'FINALIZADO';
+  estado: 'ABIERTO' | 'SELLADO' | 'SORTEANDO' | 'FINALIZADO' | 'CANCELADO';
   merkleRoot?: string | null;
   txCrearHash?: string | null;
   txSellarHash?: string | null;

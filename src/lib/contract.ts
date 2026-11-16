@@ -19,6 +19,8 @@ export const CONTRACT_ABI = [
   'function registrosSellados(uint256) external view returns (bytes32 huellaLista, uint256 totalParticipantes, string uriLista)',
   'function resultados(uint256) external view returns (uint256 requestId, uint256 numeroAleatorio, uint256 indiceGanador)',
   'function contadorSorteos() external view returns (uint256)',
+  'function hasRole(bytes32 role, address account) external view returns (bool)',
+  'function ORGANIZADOR_ROLE() external view returns (bytes32)',
   'event SorteoCreado(uint256 indexed idSorteo, address indexed organizador, bytes32 hashBases)',
   'event ListaSellada(uint256 indexed idSorteo, bytes32 huellaLista, uint256 totalParticipantes)',
   'event AleatoriedadSolicitada(uint256 indexed idSorteo, uint256 requestId)',

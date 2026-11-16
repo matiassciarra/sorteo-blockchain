@@ -45,6 +45,7 @@ import {
   mensajeErrorContrato,
 } from '@/lib/contract';
 import { construirArbolMerkle } from '@/lib/merkle';
+import { fetchOrganizador, obtenerFirma } from '@/lib/authCliente';
 
 export default function AdminPage() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -105,6 +106,17 @@ export default function AdminPage() {
       const addr = await sig.getAddress();
       setSigner(sig);
       setWalletAddress(addr);
+
+      // Firma de identificación (sin costo) para que la web acepte cambios del organizador
+      try {
+        await obtenerFirma(sig);
+      } catch {
+        notifications.show({
+          title: 'Firma pendiente',
+          message: 'Sin la firma, la web no va a registrar los cambios del sorteo. Se te va a pedir de nuevo al operar.',
+          color: 'yellow',
+        });
+      }
 
       notifications.show({
         title: 'Billetera Conectada',
@@ -168,24 +180,30 @@ export default function AdminPage() {
       }
 
       // La blockchain manda: si la base quedó atrasada (página recargada, Chainlink
-      // lento, pestaña cerrada), se la pone al día.
+      // lento, pestaña cerrada), el servidor la pone al día leyendo el contrato.
       const ESTADO_DB: Record<string, string> = {
         Sellado: 'SELLADO',
         Sorteando: 'SORTEANDO',
         Finalizado: 'FINALIZADO',
+        Cancelado: 'CANCELADO',
       };
-      const estadoDbEsperado = ESTADO_DB[estadoOnChain];
-      if (apiData && estadoDbEsperado && apiData.estado !== estadoDbEsperado) {
-        const cambios: any = { estado: estadoDbEsperado };
-        if (resultadoVRF) {
-          cambios.indiceGanador = resultadoVRF.indiceGanador;
-          cambios.numeroAleatorio = resultadoVRF.numeroAleatorio;
+      // Si el sorteo existe en el contrato pero la base no lo tiene (falló el
+      // registro al crearlo), se registra ahora con la firma del organizador.
+      if (!apiData && estadoOnChain === 'Abierto' && signer) {
+        try {
+          const r = await fetchOrganizador(signer, '/api/sorteos', {
+            method: 'POST',
+            body: JSON.stringify({ id: idSorteo, titulo: `Sorteo #${idSorteo}`, basesTexto }),
+          });
+          apiData = r.sorteo;
+        } catch (e) {
+          console.warn('No se pudo registrar el sorteo en la base', e);
         }
-        const resSync = await fetch(`/api/sorteos/${idSorteo}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cambios),
-        });
+      }
+
+      const estadoDbEsperado = ESTADO_DB[estadoOnChain];
+      if (apiData && estadoDbEsperado && (apiData as any).estado !== estadoDbEsperado) {
+        const resSync = await fetch(`/api/sorteos/${idSorteo}/sync`, { method: 'POST' });
         if (resSync.ok) apiData = (await resSync.json()).sorteo;
       }
 
@@ -202,7 +220,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     cargarEstado();
-  }, [idSorteo]);
+  }, [idSorteo, signer]);
 
   function agregarLog(msg: string, hash?: string) {
     setTxLog((prev) => [{ msg, hash }, ...prev]);
@@ -226,10 +244,9 @@ export default function AdminPage() {
       const nuevoId = Number(total);
       setIdSorteo(nuevoId);
 
-      // Guardar en backend
-      await fetch('/api/sorteos', {
+      // Guardar en backend (el servidor verifica el sorteo en el contrato)
+      await fetchOrganizador(signer, '/api/sorteos', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: nuevoId,
           titulo: `Sorteo #${nuevoId}`,
@@ -272,9 +289,8 @@ export default function AdminPage() {
 
       // 1) Cerrar inscripciones ANTES de armar el árbol: a partir de acá la API
       //    rechaza nuevas inscripciones, así nadie queda afuera del padrón sellado.
-      await fetch(`/api/sorteos/${idSorteo}`, {
+      await fetchOrganizador(signer, `/api/sorteos/${idSorteo}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ estado: 'SELLADO' }),
       });
       inscripcionesCerradas = true;
@@ -300,15 +316,10 @@ export default function AdminPage() {
       agregarLog(`Transacción enviada. Confirmando en bloque...`, tx.hash);
       await tx.wait();
 
-      // Actualizar en backend
-      await fetch(`/api/sorteos/${idSorteo}`, {
+      // Actualizar en backend (la raíz y el estado los toma del contrato)
+      await fetchOrganizador(signer, `/api/sorteos/${idSorteo}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          estado: 'SELLADO',
-          merkleRoot: raizMerkle,
-          txSellarHash: tx.hash,
-        }),
+        body: JSON.stringify({ txSellarHash: tx.hash }),
       });
 
       agregarLog(`¡Padrón sellado e inmutable on-chain!`, tx.hash);
@@ -324,9 +335,8 @@ export default function AdminPage() {
         try {
           const s = await contractRead.sorteos(idSorteo);
           if (ESTADOS_SORTEO[Number(s.estado)] === 'Abierto') {
-            await fetch(`/api/sorteos/${idSorteo}`, {
+            await fetchOrganizador(signer, `/api/sorteos/${idSorteo}`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ estado: 'ABIERTO' }),
             });
           }
@@ -353,13 +363,9 @@ export default function AdminPage() {
       await tx.wait();
 
       // Actualizar estado en backend
-      await fetch(`/api/sorteos/${idSorteo}`, {
+      await fetchOrganizador(signer, `/api/sorteos/${idSorteo}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          estado: 'SORTEANDO',
-          txVrfHash: tx.hash,
-        }),
+        body: JSON.stringify({ txVrfHash: tx.hash }),
       });
 
       notifications.show({
@@ -378,15 +384,7 @@ export default function AdminPage() {
           if (estadoNombre === 'Finalizado') {
             clearInterval(poll);
             const res = await contractRead.resultados(idSorteo);
-            await fetch(`/api/sorteos/${idSorteo}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                estado: 'FINALIZADO',
-                indiceGanador: Number(res.indiceGanador),
-                numeroAleatorio: res.numeroAleatorio.toString(),
-              }),
-            });
+            await fetch(`/api/sorteos/${idSorteo}/sync`, { method: 'POST' });
             agregarLog(`🎉 ¡Chainlink VRF respondió! Ganador oficial: Ticket #${res.indiceGanador}`);
             cargarEstado();
           } else if (intentos > 60) {
