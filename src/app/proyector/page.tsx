@@ -183,7 +183,7 @@ export default function ProyectorUltimoSorteoPage() {
                     {sorteo?.titulo || 'Sorteo en Vivo'}
                   </Title>
                   <Badge color="emerald" size="lg" variant="light">
-                    Sorteo #{sorteo?.id || 1} {!idFijado ? '(Último Creado)' : ''}
+                    {sorteo ? `Sorteo #${sorteo.id} ${!idFijado ? '(Último Creado)' : ''}` : 'Esperando sorteo'}
                   </Badge>
                 </Group>
                 <Text size="sm" c="dimmed">
@@ -397,7 +397,11 @@ export default function ProyectorUltimoSorteoPage() {
                     includeMargin={true}
                     fgColor="#064e3b"
                   />
-                ) : null}
+                ) : (
+                  <Text size="sm" c="dimmed" ta="center" maw={220} py="md">
+                    Todavía no hay un sorteo creado. Crealo desde el Panel Admin y el QR aparece acá automáticamente.
+                  </Text>
+                )}
               </Box>
 
               <Text size="xs" c="dimmed" style={{ wordBreak: 'break-all' }}>
